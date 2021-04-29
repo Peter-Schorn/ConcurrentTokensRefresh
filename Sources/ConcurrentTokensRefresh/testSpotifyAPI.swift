@@ -14,8 +14,7 @@ import FoundationNetworking
 func testSpotifyAPI() {
     
     let dispatchGroup = DispatchGroup()
-    let internalQueue = DispatchQueue.ocombine(label: "internal")
-    let concurrentQueue = DispatchQueue.ocombine(label: "concurrent")
+    let internalQueue = DispatchQueue(label: "internal")
     
     let spotifyAPI = SpotifyAPI()
     
@@ -29,52 +28,49 @@ func testSpotifyAPI() {
         var didChangeCount = 0
         spotifyAPI.tokenDidChange
             .receive(on: internalQueue)
-//            .print("tokenDidChange sink")
+            //            .print("tokenDidChange sink")
             .sink {
                 didChangeCount += 1
                 print("didChangeCount += 1: \(didChangeCount)")
             }
             .store(in: &cancellables)
         
-        concurrentQueue.queue.sync {
-            DispatchQueue.concurrentPerform(iterations: 10) { i in
-                
-                print("\nconcurrent i: \(i)\n")
-                
-//                if i > 5 && Bool.random() {
-//                    usleep(UInt32.random(in: 1_000...10_000))
-//                }
-                
-                for _ in 0...10 {
-                    dispatchGroup.enter()
-                    let cancellable = spotifyAPI.album()
-                        .sink(
-                            receiveCompletion: { completion in
-                                switch completion {
-                                    case .finished:
-                                        break
-                                    case .failure(let error):
-                                        fatalError(
-                                            "publisher finished with error: \(error)"
-                                        )
-                                }
-                                dispatchGroup.leave()
-                            },
-                            receiveValue: { album in
-                                //                        print("recieved album: \(album)")
+        DispatchQueue.concurrentPerform(iterations: 10) { i in
+            
+            print("\nconcurrent i: \(i)\n")
+            
+            //                if i > 5 && Bool.random() {
+            //                    usleep(UInt32.random(in: 1_000...10_000))
+            //                }
+            
+                dispatchGroup.enter()
+                let cancellable = spotifyAPI.refreshTokenIfExpired()
+                    .sink(
+                        receiveCompletion: { completion in
+                            switch completion {
+                                case .finished:
+                                    break
+                                case .failure(let error):
+                                    fatalError(
+                                        "publisher finished with error: \(error)"
+                                    )
                             }
-                        )
-                    
-                    internalQueue.queue.async {
-                        cancellables.insert(cancellable)
-                    }
-                }
+                            dispatchGroup.leave()
+                        },
+                        receiveValue: { _ in }
+                    )
                 
-            }
+                internalQueue.async {
+                    cancellables.insert(cancellable)
+                }
+            
         }
         dispatchGroup.wait()
         
-        assert(didChangeCount == 1, "\(didChangeCount)")
+        assert(
+            didChangeCount == 1,
+            "didChangeCount should be 1, not \(didChangeCount)"
+        )
         
     }
     

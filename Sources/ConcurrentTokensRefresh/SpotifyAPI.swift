@@ -73,28 +73,13 @@ class SpotifyAPI {
                     self.refreshTokensPublisher = nil
                 })
                 .share()
-                .receive(on: self.externalQueue)
+//                .receive(on: self.externalQueue)
                 .eraseToAnyPublisher()
 
             self.refreshTokensPublisher = refreshTokensPublisher
             return refreshTokensPublisher
 
         }
-
-    }
-
-    /// Request an album from the Spotify web API
-    func album() -> AnyPublisher<Album, Error> {
-
-        return self.refreshTokenIfExpired()
-            .flatMap { () -> AnyPublisher<Album, Error> in
-                guard let token = self.token else {
-                    return Fail(error: SpotifyError.unauthorized)
-                        .eraseToAnyPublisher()
-                }
-                return BackendServer.album(accessToken: token.accessToken)
-            }
-            .eraseToAnyPublisher()
 
     }
 
@@ -125,45 +110,14 @@ class BackendServer {
             Self.token = newToken
 
             return ResultPublisher<Token, Error>(newToken)
-                .networkDelay()
+                .delay(
+                    for: .milliseconds(Int.random(in: 100...1_000)),
+                    scheduler: DispatchQueue.global()
+                )
+                .eraseToAnyPublisher()
         }
 
     }
-    
-    static func album(accessToken: String) -> AnyPublisher<Album, Error> {
-        
-        return Self.internalQueue.sync {
-            
-            do {
-                guard let token = Self.token else {
-                    throw SpotifyError.unauthorized
-                }
-                if token.isExpired() {
-                    throw SpotifyError.expiredToken
-                }
-                if token.accessToken != accessToken {
-                    throw SpotifyError.invalidToken
-                }
-                
-                let album = Album(name: "The Dark Side of the Moon")
-                
-                return ResultPublisher(album)
-                    .networkDelay()
-                
-            } catch {
-                return Fail(error: error)
-                    .networkDelay()
-            }
-        }
-
-    }
-    
-}
-
-enum SpotifyError: Error {
-    case expiredToken
-    case invalidToken
-    case unauthorized
 }
 
 struct Token {
@@ -175,25 +129,3 @@ struct Token {
         return self.expirationDate < Date()
     }
 }
-
-struct Album {
-    let name: String
-}
-
-//let networkQueue = DispatchQueue(label: "network")
-
-extension Publisher {
-    
-    /// The standard delay that a network request would have.
-    func networkDelay() -> AnyPublisher<Output, Failure> {
-        return self.delay(
-            for: .milliseconds(Int.random(in: 100...1_000)),
-            scheduler: DispatchQueue.global()
-        )
-        .eraseToAnyPublisher()
-    }
-
-}
-
-
-
