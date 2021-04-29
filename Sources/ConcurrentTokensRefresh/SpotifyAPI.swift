@@ -39,41 +39,48 @@ class SpotifyAPI {
         }
     }
 
-    func refreshTokenIfExpired() -> AnyPublisher<Void, Error> {
+    func refreshTokenIfExpired(i: Int) -> AnyPublisher<Void, Error> {
         
         return self.internalQueue.sync { () -> AnyPublisher<Void, Error>  in
                 
             if let token = self.token, !token.isExpired() {
-//                print(
-//                    "refreshTokenIfExpired: access token not expired; " +
-//                    "returning early"
-//                )
+                print(
+                    "\(i) refreshTokenIfExpired: access token not expired; " +
+                    "returning early"
+                )
                 return ResultPublisher(())
                     .eraseToAnyPublisher()
             }
             
-//            print("refreshTokenIfExpired: access token is expired")
+            print("\(i) refreshTokenIfExpired: access token is expired")
             
             if let publisher = self.refreshTokensPublisher {
-//                print("returning previous publisher")
+                print("\(i) returning previous publisher")
                 return publisher
             }
             
-            print("refreshTokenIfExpired: creating new publisher")
+            print("\(i) refreshTokenIfExpired: creating new publisher")
             
-            let refreshTokensPublisher = BackendServer.refreshToken()
+            let refreshTokensPublisher = BackendServer.refreshToken(i: i)
                 .receive(on: self.internalQueue)
                 .map { token in
+                    print("\(i) received token")
                     self.token = token
                     self.refreshTokensPublisher = nil
-                    print("self.tokenDidChange.send()")
-                    self.tokenDidChange.send()
+                    self.externalQueue.async {
+                        self.tokenDidChange.send()
+                        print("\(i) self.tokenDidChange.send()")
+                    }
                 }
                 .handleEvents(receiveCompletion: { completion in
+                    print("\(i) receive completion; refreshTokensPublisher = nil")
                     self.refreshTokensPublisher = nil
                 })
                 .share()
-//                .receive(on: self.externalQueue)
+                .handleEvents(receiveOutput: { _ in
+                    dispatchPrecondition(condition: .onQueue(self.internalQueue))
+                })
+                .receive(on: self.externalQueue)
                 .eraseToAnyPublisher()
 
             self.refreshTokensPublisher = refreshTokensPublisher
@@ -97,10 +104,10 @@ class BackendServer {
     /// The currently valid token.
     static var token: Token? = nil
 
-    static func refreshToken() -> AnyPublisher<Token, Error> {
+    static func refreshToken(i: Int) -> AnyPublisher<Token, Error> {
 
         return Self.internalQueue.sync {
-            print("BackendServer.refreshToken")
+            print("\(i) BackendServer.refreshToken")
             let accessToken = UUID().uuidString
             let expirationDate = Date().addingTimeInterval(5)
             let newToken = Token(

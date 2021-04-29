@@ -28,23 +28,18 @@ func testSpotifyAPI() {
         var didChangeCount = 0
         spotifyAPI.tokenDidChange
             .receive(on: internalQueue)
-            //            .print("tokenDidChange sink")
             .sink {
                 didChangeCount += 1
                 print("didChangeCount += 1: \(didChangeCount)")
             }
             .store(in: &cancellables)
         
-        DispatchQueue.concurrentPerform(iterations: 10) { i in
+        DispatchQueue.concurrentPerform(iterations: 2) { i in
             
             print("\nconcurrent i: \(i)\n")
             
-            //                if i > 5 && Bool.random() {
-            //                    usleep(UInt32.random(in: 1_000...10_000))
-            //                }
-            
                 dispatchGroup.enter()
-                let cancellable = spotifyAPI.refreshTokenIfExpired()
+                let cancellable = spotifyAPI.refreshTokenIfExpired(i: i)
                     .sink(
                         receiveCompletion: { completion in
                             switch completion {
@@ -55,7 +50,10 @@ func testSpotifyAPI() {
                                         "publisher finished with error: \(error)"
                                     )
                             }
-                            dispatchGroup.leave()
+                            internalQueue.asyncAfter(deadline: .now() + 1) {
+                                print("completion \(i)")
+                                dispatchGroup.leave()
+                            }
                         },
                         receiveValue: { _ in }
                     )
@@ -71,6 +69,8 @@ func testSpotifyAPI() {
             didChangeCount == 1,
             "didChangeCount should be 1, not \(didChangeCount)"
         )
+            
+        usleep(100_000)
         
     }
     
